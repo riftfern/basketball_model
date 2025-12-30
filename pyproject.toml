@@ -1,0 +1,62 @@
+[project]
+name = "basketball-model"
+version = "0.1.0"
+description = "NBA player props betting model with +EV detection"
+requires-python = ">=3.10"
+dependencies = [
+    # Core data/stats
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "scipy>=1.11.0",
+
+    # NBA Data
+    "nba-api>=1.4.0",
+
+    # Database
+    "sqlalchemy>=2.0.0",
+
+    # HTTP/Scraping
+    "httpx>=0.25.0",
+    "beautifulsoup4>=4.12.0",
+
+    # Configuration
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+
+    # CLI
+    "rich>=13.0.0",
+    "typer>=0.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "mypy>=1.6.0",
+    "ruff>=0.1.0",
+    "ipython>=8.17.0",
+]
+
+ml = [
+    "scikit-learn>=1.3.0",
+    "xgboost>=2.0.0",
+]
+
+[project.scripts]
+nba = "src.cli:app"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
