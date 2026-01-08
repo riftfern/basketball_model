@@ -1,20 +1,21 @@
 # NBA Player Props Betting Model
 
-A sophisticated statistical modeling platform for identifying profitable NBA player prop betting opportunities. This tool leverages negative binomial distributions, real-time sportsbook odds integration, and contextual performance adjustments to detect positive expected value (+EV) edges in the betting market.
+A quantitative platform for detecting mispriced player prop markets in the NBA. Integrates historical performance data, real-time sportsbook odds, and contextual game factors into a unified prediction system that identifies positive expected value opportunities.
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
+![Type Checked](https://img.shields.io/badge/Type%20Checked-mypy-blue.svg)
 ![Code Style](https://img.shields.io/badge/Code%20Style-Ruff-orange.svg)
 
-## Overview
+## Problem Statement
 
-This project demonstrates applied quantitative analysis for sports betting markets, combining:
+Sports betting markets are inefficient. Sportsbooks set player prop lines based on public perception, liability management, and competitor pricing—not purely on statistical expectation. This creates exploitable edges for models that:
 
-- **Statistical Modeling**: Negative binomial distributions with method-of-moments parameter estimation
-- **Real-time Data Integration**: Live odds from multiple sportsbooks via The Odds API
-- **Contextual Adjustments**: Opponent defense, pace, home/away, rest days, and recency weighting
-- **Expected Value Analysis**: Edge detection with Kelly criterion bet sizing
-- **Production-Ready CLI**: Full-featured command-line interface with rich terminal output
+1. Accurately estimate probability distributions for player performance
+2. Account for contextual factors the market underweights (opponent strength, pace, rest)
+3. Compare model probabilities against devigged market odds to isolate true edge
+4. Size positions optimally given edge magnitude and uncertainty
+
+This system addresses each component through a modular pipeline that separates data ingestion, statistical modeling, odds processing, and decision logic.
 
 ## Key Features
 
@@ -65,6 +66,50 @@ src/
     └── sheets_tool.py        # Google Sheets integration
 ```
 
+## Data Pipeline
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│    NBA API      │     │  The Odds API   │     │  Google Sheets  │
+│  (Historical)   │     │  (Real-time)    │     │    (Output)     │
+└────────┬────────┘     └────────┬────────┘     └────────▲────────┘
+         │                       │                       │
+         ▼                       ▼                       │
+┌─────────────────────────────────────────────┐         │
+│              Rate-Limited Clients           │         │
+│         (20 req/min NBA, async HTTP)        │         │
+└────────┬───────────────────────┬────────────┘         │
+         │                       │                       │
+         ▼                       ▼                       │
+┌─────────────────┐     ┌─────────────────┐             │
+│   SQLAlchemy    │     │  In-Memory      │             │
+│   (Persistent)  │◄───►│  (Session)      │             │
+└────────┬────────┘     └────────┬────────┘             │
+         │                       │                       │
+         ▼                       ▼                       │
+┌─────────────────────────────────────────────┐         │
+│           Prediction Engine                 │         │
+│  (Neg. Binomial + Context Adjustments)      │         │
+└────────────────────┬────────────────────────┘         │
+                     │                                   │
+                     ▼                                   │
+┌─────────────────────────────────────────────┐         │
+│            Edge Detection                   │         │
+│   (Devig → Compare → Kelly → Filter)        │─────────┘
+└─────────────────────────────────────────────┘
+```
+
+**Data Sources:**
+- **NBA API**: Player game logs, team statistics, roster data. Rate-limited to 20 requests/minute with exponential backoff.
+- **The Odds API**: Real-time lines from 10+ sportsbooks. Normalized to consistent format across books with different conventions.
+- **SQLite**: Persistent storage for historical data, predictions, and audit trail.
+
+**Key Integration Challenges Solved:**
+- Inconsistent player name formats across APIs (resolved via fuzzy matching + ID mapping)
+- Sportsbook odds format variance (American, decimal, fractional → unified internal representation)
+- API rate limits during bulk operations (queue-based throttling with configurable concurrency)
+- Data freshness for live betting (TTL-based caching, forced refresh option)
+
 ## Technology Stack
 
 | Category | Technologies |
@@ -81,7 +126,7 @@ src/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/basketball_model.git
+git clone https://github.com/riftfern/basketball_model.git
 cd basketball_model
 
 # Create virtual environment
@@ -236,24 +281,41 @@ ruff check src/
 pytest tests/
 ```
 
+## Design Decisions
+
+### Why Negative Binomial Over Poisson?
+
+Poisson distributions assume variance equals mean. Basketball statistics consistently exhibit overdispersion—a player averaging 25 points might have variance of 40+ due to game script variability, foul trouble, and blowouts. Negative binomial's extra parameter captures this, producing more accurate tail probabilities critical for betting thresholds.
+
+### Why Method of Moments Over MLE?
+
+For this sample size (10-82 games per player), method of moments provides comparable accuracy to maximum likelihood estimation with significantly lower computational cost. This matters when generating projections for 400+ players across 7 prop types in real-time.
+
+### Why SQLite Over PostgreSQL?
+
+The system runs as a single-user CLI tool. SQLite provides ACID compliance, zero configuration, and sub-millisecond query latency for the access patterns here (primarily single-player lookups and batch inserts). The schema is designed to migrate to PostgreSQL if multi-user access becomes necessary.
+
+### Why Fractional Kelly?
+
+Full Kelly criterion maximizes long-term growth rate but produces high volatility. Quarter Kelly (default) sacrifices ~25% of expected growth for ~50% reduction in drawdown variance. The fraction is configurable based on risk tolerance.
+
+### Separation of Concerns
+
+The architecture strictly separates:
+- **Data layer**: Ingestion and storage, agnostic to how data is used
+- **Model layer**: Statistical inference, agnostic to betting context
+- **Betting layer**: EV/edge calculations, consumes model outputs
+- **Odds layer**: Market data processing, independent of internal models
+
+This allows swapping the statistical model (e.g., to XGBoost) without touching betting logic, or adding new sportsbooks without modifying the prediction pipeline.
+
 ## Roadmap
 
-- [ ] Machine learning ensemble models (XGBoost, neural networks)
-- [ ] Injury impact modeling
-- [ ] Lineup-based adjustments
-- [ ] Historical backtesting framework
-- [ ] Real-time odds monitoring and alerting
-- [ ] Web dashboard interface
-
-## Skills Demonstrated
-
-This project showcases proficiency in:
-
-- **Quantitative Analysis**: Statistical modeling, probability distributions, expected value theory
-- **Software Engineering**: Clean architecture, type safety, database design, API integration
-- **Data Engineering**: ETL pipelines, rate limiting, caching strategies
-- **Financial Modeling**: Kelly criterion, vig removal, bankroll management
-- **Python Ecosystem**: Modern Python practices with type hints, Pydantic, async HTTP
+- [ ] Machine learning ensemble models (XGBoost, gradient boosting)
+- [ ] Injury and lineup-based adjustments
+- [ ] Historical backtesting framework with walk-forward validation
+- [ ] Real-time odds monitoring with alerting
+- [ ] Multi-sport expansion (NFL, MLB)
 
 ## License
 
